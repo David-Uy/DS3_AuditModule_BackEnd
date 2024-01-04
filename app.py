@@ -9,6 +9,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
+
 port_no = 5000
 ngrok.set_auth_token("2ZqqRwyoNLoM75HBgRnRU2J9VmK_5J47dnupcTMizboiNrzFg")
 public_url = ngrok.connect(port_no).public_url
@@ -18,7 +19,7 @@ app.config['MYSQL_PASSWORD'] = 'mysql@123'
 app.config['MYSQL_DB'] = 'auditmodule'
 
 mysql = MySQL(app)
-
+mysql.init_app(app)
 @app.route('/')
 def note_for_frontend():
     return f"Add / then name of the table you want. E.g. {public_url}/auditors"
@@ -26,10 +27,12 @@ def note_for_frontend():
 @app.get('/auditors')
 def get_auditors():
     try:
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM Auditor")
-        data = cur.fetchall()
-        cur.close()
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM Auditor")
+            data = cur.fetchall()
+            cur.close()
 
         auditors_list = []
         for row in data:
@@ -45,10 +48,12 @@ def get_auditors():
     except Exception as e:
         return [{'error': str(e)}]
 
-@app.get('/members')
-def get_auditors_for_auditor_id():
+@app.get('/members') #same team
+def get_auditors_by_auditor_id():
     try:
-        cur = mysql.connection.cursor()
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
 
         # Fetch the survey_id associated with the given auditor_id
         cur.execute("SELECT Survey_ID FROM Audit WHERE Auditor_ID = 1")
@@ -81,7 +86,9 @@ def get_auditors_for_auditor_id():
 @app.route('/auditees', methods=['GET'])
 def get_auditees():
     try:
-        cur = mysql.connection.cursor()
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
         cur.execute("SELECT * FROM Auditee")
         data = cur.fetchall()
         cur.close()
@@ -104,7 +111,9 @@ def get_auditees():
 @app.route('/surveys', methods=['GET'])
 def get_surveys():
     try:
-        cur = mysql.connection.cursor()
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
         cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
         data = cur.fetchall()
         cur.close()
@@ -129,7 +138,9 @@ def get_surveys():
 @app.route('/questions/survey/<int:survey_id>', methods=['GET'])
 def get_questions_by_survey_id(survey_id):
     try:
-        cur = mysql.connection.cursor()
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
 
         # Fetch survey title and status
         survey_query = "SELECT Survey_Title, Survey_Status FROM survey WHERE Survey_ID = %s"
@@ -192,7 +203,9 @@ def get_questions_by_survey_id(survey_id):
 @app.route('/survey_respond/<int:question_id>', methods=['GET'])
 def get_user_responses(question_id):
     try:
-        cur = mysql.connection.cursor()
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
 
         # Fetch question text
         question_query = "SELECT Question_Text FROM question WHERE Question_ID = %s"
@@ -237,92 +250,44 @@ def get_user_responses(question_id):
     except Exception as e:
         return jsonify({'error': str(e)})
 
-@app.route('/survey/<int:survey_id>/update_audited', methods=['PATCH'])
-def update_survey_audited(survey_id):
+@app.route('/add_audit', methods=['POST'])
+def add_audit():
     try:
-        cur = mysql.connection.cursor()
+        if 'survey_title' not in request.json:
+            return jsonify({'error': 'Survey title not provided'}), 400
 
-        # Update survey status to 'Audited'
-        update_query = "UPDATE survey SET Survey_Status = 'Audited' WHERE Survey_ID = %s"
-        cur.execute(update_query, (survey_id,))
-        mysql.connection.commit()
+        # Get survey title from the frontend
+        survey_title = request.json.get('survey_title')  # Assuming it's sent in the request body
 
-        cur.close()
+        # Get current date
+        current_date = datetime.now().strftime('%Y-%m-%d')
 
-        return jsonify({'message': f'Survey with ID {survey_id} status updated to Audited'})
+        # Fetch survey_id based on survey_title
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
+        cur.execute("SELECT Survey_ID FROM Survey WHERE Survey_Title = %s", (survey_title,))
+        survey_id = cur.fetchone()
+
+        if survey_id:
+            # Add new audit with auditor_id = 1 and received survey_id and current date
+            cur.execute("""
+                INSERT INTO Audit (Auditor_ID, Survey_ID, Start_Date)
+                VALUES (1, %s, %s)
+            """, (survey_id[0], current_date))
+            mysql.connection.commit()
+            cur.close()
+
+            return {'message': 'Audit added successfully'}
+        else:
+            return {'error': 'Survey title not found'}
 
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return {'error': str(e)}
 
-@app.route('/audit_note/insert', methods=['POST'])
-def insert_audit_note():
-    try:
-        data = request.get_json()
-        survey_respond_id = data.get('survey_respond_id')
-        audit_id = data.get('audit_id')
-        public_note = data.get('public_note')
-        private_note = data.get('private_note')
 
-        cur = mysql.connection.cursor()
-
-        # Inserting audit_note
-        insert_query = "INSERT INTO audit_note (Survey_Respond_ID, Audit_ID, Public_Note, Private_Note) VALUES (%s, %s, %s, %s)"
-        cur.execute(insert_query, (survey_respond_id, audit_id, public_note, private_note))
-        mysql.connection.commit()
-
-        cur.close()
-
-        return jsonify({'message': 'Audit note inserted successfully'})
-
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/audit/<int:survey_id>', methods=['POST'])
-def insert_audit_and_update_survey(survey_id):
-    try:
-        data = request.get_json()
-        auditor_id = 1  # Use the specific auditor ID or retrieve it from the request data
-        audit_start_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Current date and time
-
-        cur = mysql.connection.cursor()
-
-        # Inserting into audit table without specifying Audit_ID
-        insert_query = "INSERT INTO audit (Auditor_ID, Survey_ID, Audit_Start_Date) VALUES (%s, %s, %s)"
-        cur.execute(insert_query, (auditor_id, survey_id, audit_start_date))
-
-        # Update survey status to 'Processing'
-        update_query = "UPDATE survey SET Survey_Status = 'Processing' WHERE Survey_ID = %s"
-        cur.execute(update_query, (survey_id,))
-
-        mysql.connection.commit()
-        cur.close()
-
-        return jsonify({'message': 'Audit details inserted successfully and survey status updated to Processing'})
-
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/survey/<int:survey_id>/update_audited', methods=['PATCH'])
-def update_status_to_processing(survey_id):
-    try:
-        cur = mysql.connection.cursor()
-
-        # Update survey status to 'Processing'
-        update_query = "UPDATE survey SET Survey_Status = 'Processing' WHERE Survey_ID = %s"
-        cur.execute(update_query, (survey_id,))
-        mysql.connection.commit()
-
-        cur.close()
-
-        return jsonify({'message': f'Survey with ID {survey_id} status updated to Processing'})
-
-    except Exception as e:
-        return jsonify({'error': str(e)})
 
 if __name__ == '__main__':
     app.run(debug=True)
 
 print(f"Please click {public_url}")
-if __name__ == '__main__':
-    # Start Flask app
-    app.run()
