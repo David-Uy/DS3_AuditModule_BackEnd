@@ -21,8 +21,8 @@ logging.basicConfig(level=logging.DEBUG)
 # public_url = ngrok.connect(port_no).public_url
 app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'mysql@123'
-app.config['MYSQL_DB'] = 'auditmodule'
+app.config['MYSQL_PASSWORD'] = 'Tuan1997'
+app.config['MYSQL_DB'] = 'audimodule'
 
 mysql = MySQL(app)
 mysql.init_app(app)
@@ -270,12 +270,13 @@ def add_audit():
         current_date = datetime.now().strftime('%Y-%m-%d')
 
         # Establish MySQL connection
-        conn = mysql.connector.connect(
-            host="your_host",
-            user="your_username",
-            password="your_password",
-            database="your_database"
-        )
+        # conn = mysql.connector.connect(
+        #     host="your_host",
+        #     user="your_username",
+        #     password="your_password",
+        #     database="your_database"
+        # )
+        conn=mysql.connect
 
         # Create a cursor object
         cur = conn.cursor()
