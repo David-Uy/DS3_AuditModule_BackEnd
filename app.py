@@ -1,18 +1,24 @@
 from flask import Flask, jsonify
 from flask import request
 from flask_mysqldb import MySQL
-from pyngrok import ngrok
+# from pyngrok import ngrok
 from flask_cors import CORS
+from flask_cors import cross_origin
 from collections import defaultdict
 from datetime import datetime
-
+from datetime import date
+# import mysql.connector
+import logging
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origin='*')
 
-port_no = 5000
-ngrok.set_auth_token("2ZqqRwyoNLoM75HBgRnRU2J9VmK_5J47dnupcTMizboiNrzFg")
-public_url = ngrok.connect(port_no).public_url
+# Add this at the beginning of your Flask application
+logging.basicConfig(level=logging.DEBUG)
+
+# port_no = 5000
+# ngrok.set_auth_token("2ZqqRwyoNLoM75HBgRnRU2J9VmK_5J47dnupcTMizboiNrzFg")
+# public_url = ngrok.connect(port_no).public_url
 app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'mysql@123'
@@ -20,9 +26,9 @@ app.config['MYSQL_DB'] = 'auditmodule'
 
 mysql = MySQL(app)
 mysql.init_app(app)
-@app.route('/')
-def note_for_frontend():
-    return f"Add / then name of the table you want. E.g. {public_url}/auditors"
+# @app.route('/')
+# def note_for_frontend():
+#     return f"Add / then name of the table you want. E.g. {public_url}/auditors"
 
 @app.get('/auditors')
 def get_auditors():
@@ -251,43 +257,59 @@ def get_user_responses(question_id):
         return jsonify({'error': str(e)})
 
 @app.route('/add_audit', methods=['POST'])
+@cross_origin()
 def add_audit():
     try:
         if 'survey_title' not in request.json:
             return jsonify({'error': 'Survey title not provided'}), 400
 
         # Get survey title from the frontend
-        survey_title = request.json.get('survey_title')  # Assuming it's sent in the request body
+        survey_title = request.json.get('survey_title')
 
         # Get current date
         current_date = datetime.now().strftime('%Y-%m-%d')
 
+        # Establish MySQL connection
+        conn = mysql.connector.connect(
+            host="your_host",
+            user="your_username",
+            password="your_password",
+            database="your_database"
+        )
+
+        # Create a cursor object
+        cur = conn.cursor()
+
+        # Get the last audit_id
+        cur.execute("SELECT MAX(audit_id) FROM Audit")
+        last_audit_id = cur.fetchone()[0]
+
+        # Calculate the new audit_id
+        new_audit_id = last_audit_id + 1 if last_audit_id is not None else 1
+
         # Fetch survey_id based on survey_title
-        with app.app_context():
-            conn = mysql.connect
-            cur = conn.cursor()
         cur.execute("SELECT Survey_ID FROM Survey WHERE Survey_Title = %s", (survey_title,))
         survey_id = cur.fetchone()
 
         if survey_id:
             # Add new audit with auditor_id = 1 and received survey_id and current date
             cur.execute("""
-                INSERT INTO Audit (Auditor_ID, Survey_ID, Start_Date)
-                VALUES (1, %s, %s)
-            """, (survey_id[0], current_date))
-            mysql.connection.commit()
+                INSERT INTO Audit (audit_id, Auditor_ID, Survey_ID, Audit_Start_Date)
+                VALUES (%s, 1, %s, %s)
+            """, (new_audit_id, survey_id[0], current_date))
+            conn.commit()
             cur.close()
+            conn.close()
 
             return {'message': 'Audit added successfully'}
         else:
-            return {'error': 'Survey title not found'}
+            return {'error': 'Survey title not found'}, 404
 
     except Exception as e:
-        return {'error': str(e)}
-
+        return {'error': str(e)}, 500
 
 
 if __name__ == '__main__':
     app.run(debug=True)
 
-print(f"Please click {public_url}")
+# print(f"Please click {public_url}")
