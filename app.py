@@ -420,6 +420,44 @@ def add_audit():
 @app.route('/end_audit', methods=['POST'])
 @cross_origin()
 def end_audit():
+    try:
+        if 'survey_title' not in request.json:
+            return jsonify({'error': 'Survey title not provided'}), 400
+
+        # Get survey title from the frontend
+        survey_title = request.json.get('survey_title')
+
+        # Get current date
+        current_date = datetime.now().strftime('%Y-%m-%d')
+
+        conn=mysql.connect
+
+        # Create a cursor object
+        cur = conn.cursor()
+
+        # Fetch survey_id based on survey_title
+        cur.execute("SELECT Survey_ID FROM Survey WHERE Survey_Title = %s", (survey_title,))
+        survey_id = cur.fetchone()
+
+        if survey_id:
+
+            # Update Audit with the found audit_id and set Audit_End_Date to the current date
+            cur.execute("""
+                UPDATE Audit
+                SET Audit_End_Date = %s
+                WHERE Survey_ID = %s
+            """, (current_date, survey_id))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            return {'message': 'Audit added successfully'}
+        else:
+            return {'error': 'Survey title not found'}, 404
+
+    except Exception as e:
+        return {'error': str(e)}, 500
 
 
 if __name__ == '__main__':
