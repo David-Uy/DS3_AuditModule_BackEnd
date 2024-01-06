@@ -21,8 +21,8 @@ logging.basicConfig(level=logging.DEBUG)
 # public_url = ngrok.connect(port_no).public_url
 app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'Tuan1997'
-app.config['MYSQL_DB'] = 'audimodule'
+app.config['MYSQL_PASSWORD'] = 'mysql@123'
+app.config['MYSQL_DB'] = 'auditmodule'
 
 mysql = MySQL(app)
 mysql.init_app(app)
@@ -115,31 +115,129 @@ def get_auditees():
         return jsonify({'error': str(e)})
 
 @app.route('/surveys', methods=['GET'])
+# def get_surveys():
+#     try:
+#         with app.app_context():
+#             conn = mysql.connect
+#             cur = conn.cursor()
+#         cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
+#         data = cur.fetchall()
+#         cur.close()
+#
+#
+#         surveys_list = []
+#         for row in data:
+#             survey = {
+#                 'Survey_ID': row[0],
+#                 'Survey_Title': row[1],
+#                 'Survey_Description': row[2],
+#                 'Survey_Start_Date': row[3],
+#                 'Survey_End_Date': row[4],
+#                 'Survey_Status': row[5]
+#                 # Add more fields as needed
+#             }
+#             surveys_list.append(survey)
+#
+#
+#
+#         return surveys_list
+#     except Exception as e:
+#         return [{'error': str(e)}]
+# def get_surveys():
+#     try:
+#         with app.app_context():
+#             conn = mysql.connect
+#             cur = conn.cursor()
+#
+#             # Fetch surveys from the Survey table
+#             cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
+#             data = cur.fetchall()
+#
+#             # Check if survey_id exists in the Audit table
+#             for row in data:
+#                 survey_id = row[0]
+#                 cur.execute("SELECT COUNT(*) FROM Audit WHERE Survey_ID = %s", (survey_id,))
+#                 count = cur.fetchone()[0]
+#
+#                 # If the survey_id exists in the Audit table, update its status
+#                 if count > 0:
+#                     cur.execute("UPDATE Survey SET Survey_Status = 'Processing' WHERE Survey_ID = %s AND Survey_Status = 'New'", (survey_id,))
+#                     conn.commit()
+#
+#             cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
+#             updated_data = cur.fetchall()
+#             cur.close()
+#
+#             updated_surveys_list = []
+#             for row in updated_data:
+#                 survey = {
+#                     'Survey_ID': row[0],
+#                     'Survey_Title': row[1],
+#                     'Survey_Description': row[2],
+#                     'Survey_Start_Date': row[3],
+#                     'Survey_End_Date': row[4],
+#                     'Survey_Status': row[5]
+#                     # Add more fields as needed
+#                 }
+#                 updated_surveys_list.append(survey)
+#
+#             return updated_surveys_list
+#
+#     except Exception as e:
+#         return [{'error': str(e)}]
 def get_surveys():
     try:
         with app.app_context():
             conn = mysql.connect
             cur = conn.cursor()
-        cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
-        data = cur.fetchall()
-        cur.close()
 
-        surveys_list = []
-        for row in data:
-            survey = {
-                'Survey_ID': row[0],
-                'Survey_Title': row[1],
-                'Survey_Description': row[2],
-                'Survey_Start_Date': row[3],
-                'Survey_End_Date': row[4],
-                'Survey_Status': row[5]
-                # Add more fields as needed
-            }
-            surveys_list.append(survey)
+            # Fetch surveys from the Survey table
+            cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
+            data = cur.fetchall()
 
-        return surveys_list
+            for row in data:
+                survey_id = row[0]
+                cur.execute("SELECT COUNT(*) FROM Audit WHERE Survey_ID = %s", (survey_id,))
+                count = cur.fetchone()[0]
+
+                if count > 0:
+                    # Check if audit_end_date is set for the survey_id in the Audit table
+                    cur.execute("SELECT COUNT(*) FROM Audit WHERE Survey_ID = %s AND audit_end_date IS NOT NULL", (survey_id,))
+                    audit_with_end_date = cur.fetchone()[0]
+
+                    if audit_with_end_date > 0:
+                        # If audit_end_date is set, update Survey_Status to 'Audited'
+                        cur.execute("UPDATE Survey SET Survey_Status = 'Audited' WHERE Survey_ID = %s", (survey_id,))
+                    else:
+                        # Otherwise, update Survey_Status to 'Processing' if it's 'New'
+                        cur.execute("UPDATE Survey SET Survey_Status = 'Processing' WHERE Survey_ID = %s AND Survey_Status = 'New'", (survey_id,))
+
+                    conn.commit()
+
+            # Fetch the updated list of surveys
+            cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
+            updated_data = cur.fetchall()
+            cur.close()
+
+            updated_surveys_list = []
+            for row in updated_data:
+                survey = {
+                    'Survey_ID': row[0],
+                    'Survey_Title': row[1],
+                    'Survey_Description': row[2],
+                    'Survey_Start_Date': row[3],
+                    'Survey_End_Date': row[4],
+                    'Survey_Status': row[5]
+                    # Add more fields as needed
+                }
+                updated_surveys_list.append(survey)
+
+            return updated_surveys_list
+
     except Exception as e:
         return [{'error': str(e)}]
+
+
 
 @app.route('/questions/survey/<int:survey_id>', methods=['GET'])
 def get_questions_by_survey_id(survey_id):
@@ -294,10 +392,20 @@ def add_audit():
 
         if survey_id:
             # Add new audit with auditor_id = 1 and received survey_id and current date
+            # cur.execute("""
+            #     INSERT INTO Audit (audit_id, Auditor_ID, Survey_ID, Audit_Start_Date)
+            #     VALUES (%s, 1, %s, %s)
+            # """, (new_audit_id, survey_id[0], current_date))
+
+            audit_content = f'Audit - {survey_title}'
+
+            # Add new audit with auditor_id = 1, received survey_id, current date, and updated audit content
             cur.execute("""
-                INSERT INTO Audit (audit_id, Auditor_ID, Survey_ID, Audit_Start_Date)
-                VALUES (%s, 1, %s, %s)
-            """, (new_audit_id, survey_id[0], current_date))
+                INSERT INTO Audit (audit_id, Auditor_ID, Survey_ID, Audit_Content, Audit_Start_Date)
+                VALUES (%s, 1, %s, %s, %s)
+            """, (new_audit_id, survey_id[0], audit_content, current_date))
+
+
             conn.commit()
             cur.close()
             conn.close()
@@ -308,6 +416,10 @@ def add_audit():
 
     except Exception as e:
         return {'error': str(e)}, 500
+
+@app.route('/end_audit', methods=['POST'])
+@cross_origin()
+def end_audit():
 
 
 if __name__ == '__main__':
