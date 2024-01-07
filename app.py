@@ -6,7 +6,6 @@ from flask_cors import CORS
 from flask_cors import cross_origin
 from collections import defaultdict
 from datetime import datetime
-from datetime import date
 # import mysql.connector
 import logging
 
@@ -115,76 +114,6 @@ def get_auditees():
         return jsonify({'error': str(e)})
 
 @app.route('/surveys', methods=['GET'])
-# def get_surveys():
-#     try:
-#         with app.app_context():
-#             conn = mysql.connect
-#             cur = conn.cursor()
-#         cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
-#         data = cur.fetchall()
-#         cur.close()
-#
-#
-#         surveys_list = []
-#         for row in data:
-#             survey = {
-#                 'Survey_ID': row[0],
-#                 'Survey_Title': row[1],
-#                 'Survey_Description': row[2],
-#                 'Survey_Start_Date': row[3],
-#                 'Survey_End_Date': row[4],
-#                 'Survey_Status': row[5]
-#                 # Add more fields as needed
-#             }
-#             surveys_list.append(survey)
-#
-#
-#
-#         return surveys_list
-#     except Exception as e:
-#         return [{'error': str(e)}]
-# def get_surveys():
-#     try:
-#         with app.app_context():
-#             conn = mysql.connect
-#             cur = conn.cursor()
-#
-#             # Fetch surveys from the Survey table
-#             cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
-#             data = cur.fetchall()
-#
-#             # Check if survey_id exists in the Audit table
-#             for row in data:
-#                 survey_id = row[0]
-#                 cur.execute("SELECT COUNT(*) FROM Audit WHERE Survey_ID = %s", (survey_id,))
-#                 count = cur.fetchone()[0]
-#
-#                 # If the survey_id exists in the Audit table, update its status
-#                 if count > 0:
-#                     cur.execute("UPDATE Survey SET Survey_Status = 'Processing' WHERE Survey_ID = %s AND Survey_Status = 'New'", (survey_id,))
-#                     conn.commit()
-#
-#             cur.execute("SELECT * FROM Survey ORDER BY FIELD(Survey_Status, 'Processing', 'New', 'Audited')")
-#             updated_data = cur.fetchall()
-#             cur.close()
-#
-#             updated_surveys_list = []
-#             for row in updated_data:
-#                 survey = {
-#                     'Survey_ID': row[0],
-#                     'Survey_Title': row[1],
-#                     'Survey_Description': row[2],
-#                     'Survey_Start_Date': row[3],
-#                     'Survey_End_Date': row[4],
-#                     'Survey_Status': row[5]
-#                     # Add more fields as needed
-#                 }
-#                 updated_surveys_list.append(survey)
-#
-#             return updated_surveys_list
-#
-#     except Exception as e:
-#         return [{'error': str(e)}]
 def get_surveys():
     try:
         with app.app_context():
@@ -236,8 +165,6 @@ def get_surveys():
 
     except Exception as e:
         return [{'error': str(e)}]
-
-
 
 @app.route('/questions/survey/<int:survey_id>', methods=['GET'])
 def get_questions_by_survey_id(survey_id):
@@ -459,6 +386,67 @@ def end_audit():
     except Exception as e:
         return {'error': str(e)}, 500
 
+
+@app.route('/add_audit_note', methods=['POST'])
+@cross_origin()
+def add_audit_note():
+    try:
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
+        if 'responseId' not in request.json or 'publicNote' not in request.json or 'privateNote' not in request.json:
+            return jsonify({'error': 'Survey respond ID, public note, or private note not provided'}), 400
+
+        survey_respond_id = request.json.get('responseId')
+        public_note = request.json.get('publicNote')
+        private_note = request.json.get('privateNote')
+        print(survey_respond_id)
+
+        cur.execute("SELECT Survey_ID FROM survey_respond WHERE Survey_Respond_ID = %s", (survey_respond_id,))
+        survey_id = cur.fetchone()
+
+        if survey_id:
+            cur.execute("SELECT MAX(Audit_Note_ID) FROM audit_note")
+            last_audit_note_id = cur.fetchone()[0]
+
+            new_audit_note_id = last_audit_note_id + 1 if last_audit_note_id is not None else 1
+
+            cur.execute("SELECT Audit_ID FROM audit WHERE Survey_ID = %s AND Auditor_ID = 1", (survey_id,))
+            audit_id = cur.fetchone()
+
+            if audit_id:
+                cur.execute("""
+                    INSERT INTO audit_note (Audit_Note_ID, Public_Note, Private_Note, Survey_Respond_ID, Audit_ID)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (new_audit_note_id, public_note, private_note, survey_respond_id, audit_id))
+
+                conn.commit()
+                cur.close()
+                conn.close()
+
+                return {'message': 'Audit note added successfully'}
+            else:
+                return jsonify({'error': 'Audit ID not found for the provided Survey ID and Auditor ID'}), 404
+        else:
+            return jsonify({'error': 'Survey ID not found for the provided Survey Respond ID'}), 404
+
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+
+@app.route('/auditor_data')
+def get_auditor_data():
+    try:
+        conn = mysql.connect()
+        cursor = conn.cursor()
+
+
+        return jsonify()
+    except Exception as e:
+        return {'error': str(e)}, 500
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True)
