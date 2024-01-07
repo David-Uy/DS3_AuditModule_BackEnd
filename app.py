@@ -1,5 +1,4 @@
 import json
-
 from flask import Flask, jsonify
 from flask import request
 from flask_mysqldb import MySQL
@@ -275,6 +274,7 @@ def get_user_responses(question_id):
                 'question_id': f'{question_id}',
                 'question': question_text[0],
                 'user_responses': user_responses_list
+
             }
 
             return jsonify(response_data)
@@ -282,6 +282,7 @@ def get_user_responses(question_id):
             return jsonify({'error': 'Question not found'})
     except Exception as e:
         return jsonify({'error': str(e)})
+
 
 @app.route('/add_audit', methods=['POST'])
 @cross_origin()
