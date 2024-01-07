@@ -445,14 +445,14 @@ def get_auditor_data():
             cur = conn.cursor()
 
         cur.execute("""
-                        SELECT Audit_Note_ID, Public_Note, Private_Note 
-                        FROM audit_note 
+                        SELECT Audit_Note_ID, Public_Note, Private_Note
+                        FROM audit_note
                         WHERE Audit_ID IN (SELECT Audit_ID FROM audit WHERE Auditor_ID = 1)
                     """)
         auditor_notes = cur.fetchall()
         formatted_auditor_notes = [
             {
-                "audit_note_id": item[0],
+                "note_id": item[0],
                 "public_note": item[1],
                 "private_note": item[2]
             }
@@ -500,7 +500,7 @@ def get_auditor_data():
                 "auditee_id": item[2],
                 "question_id": item[3],
                 "response": item[4],
-                "audit_note_id": item[5]
+                "note_id": item[5]
             }
             for item in survey_responses
         ]
