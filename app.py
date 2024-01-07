@@ -436,6 +436,52 @@ def add_audit_note():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/add_meeting', methods=['POST'])
+@cross_origin()
+def add_meeting():
+    try:
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
+
+            if 'responseIds' not in request.json or 'auditeeId' not in request.json:
+                return jsonify({'error': 'Survey respond ID or Auditee_ID not provided'}), 400
+
+            survey_respond_ids = request.json.get('responseIds')
+            if not (survey_respond_ids and isinstance(survey_respond_ids, list) and len(survey_respond_ids) > 0):
+                return jsonify({'error': 'No valid Survey respond ID provided'}), 400
+
+            respond_id = survey_respond_ids[0]
+            auditee_id = request.json.get('auditeeId')
+            current_date = datetime.now().strftime('%Y-%m-%d')
+
+            # Fetch the Audit_ID using Survey_Respond_ID
+            cur.execute("SELECT Audit_ID FROM audit_note WHERE Survey_Respond_ID = %s", (respond_id,))
+            audit_ids = cur.fetchone()
+            if not audit_ids:
+                return jsonify({'error': 'No Audit_ID found for the given Survey_Respond_ID'}), 404
+            audit_id = audit_ids[0]
+
+            # Get the maximum Meeting_ID
+            cur.execute("SELECT MAX(Meeting_ID) FROM meeting")
+            last_meeting_id = cur.fetchone()[0]
+
+            # Calculate the new Meeting_ID
+            new_meeting_id = last_meeting_id + 1 if last_meeting_id is not None else 1
+
+            # Insert a new meeting with the manually incremented Meeting_ID
+            insert_query = "INSERT INTO meeting (Meeting_ID, Meeting_Content, Meeting_Time, Auditee_ID, Audit_ID, Auditor_ID, Meeting_Status) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+            cur.execute(insert_query,
+                        (new_meeting_id, "Meeting content", current_date, auditee_id, audit_id, 1, 'Waiting'))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            return jsonify({'success': 'Meeting added successfully'}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/auditor_note_data')
 def get_auditor_data():
@@ -531,7 +577,6 @@ def get_auditor_data():
     finally:
         cur.close()
         conn.close()
-
 
 
 @app.route('/meeting/<meeting_status>', methods=['GET'])
