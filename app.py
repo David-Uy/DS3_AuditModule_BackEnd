@@ -560,80 +560,69 @@ def get_meeting_data(meeting_status):
                 for item in meetings
             ]
 
-            # Fetch auditor notes for each meeting's audit ID
-            formatted_auditor_notes = []
-            formatted_auditees = []
-            formatted_survey_questions = []
-            formatted_survey_responses = []
+            cur.execute("""
+                        SELECT DISTINCT a.*
+                        FROM auditee a
+                        JOIN meeting m ON a.Auditee_ID = m.Auditee_ID
+                        WHERE m.Meeting_Status = %s
+            """, (meeting_status,))
 
-            for meeting in meetings:
-                cur.execute("""
-                    SELECT Audit_Note_ID, Public_Note, Private_Note
-                    FROM audit_note
-                    WHERE Audit_ID = %s
-                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
+            auditees = cur.fetchall()
 
-                auditor_notes = cur.fetchall()
-                formatted_auditor_notes.extend([
-                    {
-                        "note_id": note[0],
-                        "public_note": note[1],
-                        "private_note": note[2]
-                    }
-                    for note in auditor_notes
-                ])
+            formatted_auditees = [
+                {
+                    "auditee_id": item[0],
+                    "auditee_name": item[1],
+                    "age": item[2],
+                    "department": item[3]
+                }
+                for item in auditees
+            ]
 
-                cur.execute("""
-                    SELECT * FROM auditee
-                    WHERE Auditee_ID IN (SELECT Auditee_ID FROM audit WHERE Auditor_ID = 1 AND Audit_ID = %s)
-                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
+            cur.execute("SELECT * FROM question WHERE Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1)")
+            survey_questions = cur.fetchall()
+            formatted_survey_questions = [
+                {
+                    "question_id": item[0],
+                    "survey_id": item[1],
+                    "question": item[2]
+                }
+                for item in survey_questions
+            ]
 
-                auditees = cur.fetchall()
-                formatted_auditees.extend([
-                    {
-                        "auditee_id": item[0],
-                        "auditee_name": item[1],
-                        "age": item[2],
-                        "department": item[3]
-                    }
-                    for item in auditees
-                ])
+            cur.execute("""
+                SELECT sr.*, an.Audit_Note_ID
+                FROM survey_respond sr
+                JOIN audit_note an ON sr.Survey_Respond_ID = an.Survey_Respond_ID
+                WHERE sr.Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1)
+            """)
+            survey_responses = cur.fetchall()
+            formatted_survey_responses = [
+                {
+                    "response_id": item[0],
+                    "survey_id": item[1],
+                    "auditee_id": item[2],
+                    "question_id": item[3],
+                    "response": item[4],
+                    "note_id": item[5]
+                }
+                for item in survey_responses
+            ]
 
-                cur.execute("""
-                    SELECT * FROM question
-                    WHERE Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1 AND Audit_ID = %s)
-                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
-
-                survey_questions = cur.fetchall()
-                formatted_survey_questions.extend([
-                    {
-                        "question_id": item[0],
-                        "survey_id": item[1],
-                        "question": item[2]
-                    }
-                    for item in survey_questions
-                ])
-
-                cur.execute("""
-                    SELECT sr.*, an.Audit_Note_ID
-                    FROM survey_respond sr
-                    JOIN audit_note an ON sr.Survey_Respond_ID = an.Survey_Respond_ID
-                    WHERE sr.Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1 AND Audit_ID = %s)
-                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
-
-                survey_responses = cur.fetchall()
-                formatted_survey_responses.extend([
-                    {
-                        "response_id": item[0],
-                        "survey_id": item[1],
-                        "auditee_id": item[2],
-                        "question_id": item[3],
-                        "response": item[4],
-                        "note_id": item[5]
-                    }
-                    for item in survey_responses
-                ])
-
+            cur.execute("""
+                             SELECT Audit_Note_ID, Public_Note, Private_Note
+                             FROM audit_note
+                             WHERE Audit_ID IN (SELECT Audit_ID FROM audit WHERE Auditor_ID = 1)
+                         """)
+            auditor_notes = cur.fetchall()
+            formatted_auditor_notes = [
+                {
+                    "note_id": item[0],
+                    "public_note": item[1],
+                    "private_note": item[2]
+                }
+                for item in auditor_notes
+            ]
             # Construct response data
             response_data = {
                 "meetings": formatted_meetings,
