@@ -1,3 +1,5 @@
+import json
+
 from flask import Flask, jsonify
 from flask import request
 from flask_mysqldb import MySQL
@@ -394,6 +396,7 @@ def add_audit_note():
         with app.app_context():
             conn = mysql.connect
             cur = conn.cursor()
+
         if 'responseId' not in request.json or 'publicNote' not in request.json or 'privateNote' not in request.json:
             return jsonify({'error': 'Survey respond ID, public note, or private note not provided'}), 400
 
@@ -434,19 +437,89 @@ def add_audit_note():
         return {'error': str(e)}, 500
 
 
-@app.route('/auditor_data')
+@app.route('/auditor_note_data')
 def get_auditor_data():
     try:
-        conn = mysql.connect()
-        cursor = conn.cursor()
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
+
+        cur.execute("""
+                        SELECT Audit_Note_ID, Public_Note, Private_Note 
+                        FROM audit_note 
+                        WHERE Audit_ID IN (SELECT Audit_ID FROM audit WHERE Auditor_ID = 1)
+                    """)
+        auditor_notes = cur.fetchall()
+        formatted_auditor_notes = [
+            {
+                "audit_note_id": item[0],
+                "public_note": item[1],
+                "private_note": item[2]
+            }
+            for item in auditor_notes
+        ]
 
 
-        return jsonify()
+        cur.execute("SELECT * FROM auditee WHERE Auditee_ID IN (SELECT Auditee_ID FROM audit WHERE Auditor_ID = 1)")
+        auditees = cur.fetchall()
+
+        formatted_auditees = [
+            {
+                "auditee_id": item[0],
+                "auditee_name": item[1],
+                "age": item[2],
+                "department": item[3]
+            }
+            for item in auditees
+        ]
+
+        cur.execute("SELECT * FROM question WHERE Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1)")
+        survey_questions = cur.fetchall()
+        formatted_survey_questions = [
+            {
+                "question_id": item[0],
+                "survey_id": item[1],
+                "question": item[2]
+            }
+            for item in survey_questions
+        ]
+
+
+
+        cur.execute("""
+    SELECT sr.*, an.Audit_Note_ID
+    FROM survey_respond sr
+    JOIN audit_note an ON sr.Survey_Respond_ID = an.Survey_Respond_ID
+    WHERE sr.Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1)
+""")
+        survey_responses = cur.fetchall()
+        formatted_survey_responses = [
+            {
+                "response_id": item[0],
+                "survey_id": item[1],
+                "auditee_id": item[2],
+                "question_id": item[3],
+                "response": item[4],
+                "audit_note_id": item[5]
+            }
+            for item in survey_responses
+        ]
+
+        # Construct response data
+        response_data = {
+            "survey_responses": formatted_survey_responses,
+            "survey_questions": formatted_survey_questions,
+            "auditees": formatted_auditees,
+            "auditor_notes": formatted_auditor_notes
+        }
+
+        return jsonify(response_data)
     except Exception as e:
         return {'error': str(e)}, 500
     finally:
-        cursor.close()
+        cur.close()
         conn.close()
+
 
 if __name__ == '__main__':
     app.run(debug=True)
