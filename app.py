@@ -459,8 +459,18 @@ def get_auditor_data():
             for item in auditor_notes
         ]
 
-
-        cur.execute("SELECT * FROM auditee WHERE Auditee_ID IN (SELECT Auditee_ID FROM audit WHERE Auditor_ID = 1)")
+        cur.execute("""
+            SELECT *
+            FROM auditee
+            WHERE Auditee_ID IN (
+                SELECT DISTINCT sr.Auditee_ID
+                FROM survey_respond sr
+                WHERE sr.Survey_Respond_ID IN (
+                    SELECT an.Survey_Respond_ID
+                    FROM audit_note an
+                )
+            )
+        """)
         auditees = cur.fetchall()
 
         formatted_auditees = [
@@ -472,6 +482,8 @@ def get_auditor_data():
             }
             for item in auditees
         ]
+
+
 
         cur.execute("SELECT * FROM question WHERE Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1)")
         survey_questions = cur.fetchall()
@@ -509,11 +521,129 @@ def get_auditor_data():
         response_data = {
             "survey_responses": formatted_survey_responses,
             "survey_questions": formatted_survey_questions,
-            "auditees": formatted_auditees,
+            "auditees": formatted_auditees ,
             "auditor_notes": formatted_auditor_notes
         }
 
         return jsonify(response_data)
+    except Exception as e:
+        return {'error': str(e)}, 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+
+@app.route('/meeting/<meeting_status>', methods=['GET'])
+def get_meeting_data(meeting_status):
+    try:
+        with app.app_context():
+            conn = mysql.connect
+            cur = conn.cursor()
+
+            # Fetching meeting data based on Auditor_ID and Meeting_Status received from the front-end
+            cur.execute("""
+                SELECT Meeting_ID, Meeting_Content, Meeting_Time, Meeting_Status, Audit_ID
+                FROM meeting
+                WHERE Auditor_ID = 1 AND Meeting_Status = %s
+            """, (meeting_status,))
+            meetings = cur.fetchall()
+
+            formatted_meetings = [
+                {
+                    "meeting_id": item[0],
+                    "meeting_content": item[1],
+                    "meeting_time": item[2].strftime("%Y-%m-%d %H:%M:%S"),
+                    "meeting_status": item[3],
+                    "audit_id": item[4]  # Assuming Audit_ID is included in the query result
+                }
+                for item in meetings
+            ]
+
+            # Fetch auditor notes for each meeting's audit ID
+            formatted_auditor_notes = []
+            formatted_auditees = []
+            formatted_survey_questions = []
+            formatted_survey_responses = []
+
+            for meeting in meetings:
+                cur.execute("""
+                    SELECT Audit_Note_ID, Public_Note, Private_Note
+                    FROM audit_note
+                    WHERE Audit_ID = %s
+                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
+
+                auditor_notes = cur.fetchall()
+                formatted_auditor_notes.extend([
+                    {
+                        "note_id": note[0],
+                        "public_note": note[1],
+                        "private_note": note[2]
+                    }
+                    for note in auditor_notes
+                ])
+
+                cur.execute("""
+                    SELECT * FROM auditee
+                    WHERE Auditee_ID IN (SELECT Auditee_ID FROM audit WHERE Auditor_ID = 1 AND Audit_ID = %s)
+                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
+
+                auditees = cur.fetchall()
+                formatted_auditees.extend([
+                    {
+                        "auditee_id": item[0],
+                        "auditee_name": item[1],
+                        "age": item[2],
+                        "department": item[3]
+                    }
+                    for item in auditees
+                ])
+
+                cur.execute("""
+                    SELECT * FROM question
+                    WHERE Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1 AND Audit_ID = %s)
+                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
+
+                survey_questions = cur.fetchall()
+                formatted_survey_questions.extend([
+                    {
+                        "question_id": item[0],
+                        "survey_id": item[1],
+                        "question": item[2]
+                    }
+                    for item in survey_questions
+                ])
+
+                cur.execute("""
+                    SELECT sr.*, an.Audit_Note_ID
+                    FROM survey_respond sr
+                    JOIN audit_note an ON sr.Survey_Respond_ID = an.Survey_Respond_ID
+                    WHERE sr.Survey_ID IN (SELECT Survey_ID FROM audit WHERE Auditor_ID = 1 AND Audit_ID = %s)
+                """, (meeting[4],))  # Assuming Audit_ID is in the 5th position of the query result
+
+                survey_responses = cur.fetchall()
+                formatted_survey_responses.extend([
+                    {
+                        "response_id": item[0],
+                        "survey_id": item[1],
+                        "auditee_id": item[2],
+                        "question_id": item[3],
+                        "response": item[4],
+                        "note_id": item[5]
+                    }
+                    for item in survey_responses
+                ])
+
+            # Construct response data
+            response_data = {
+                "meetings": formatted_meetings,
+                "auditor_notes": formatted_auditor_notes,
+                "auditees": formatted_auditees,
+                "survey_questions": formatted_survey_questions,
+                "survey_responses": formatted_survey_responses
+            }
+
+            return jsonify(response_data)
     except Exception as e:
         return {'error': str(e)}, 500
     finally:
